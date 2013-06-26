@@ -1,0 +1,43 @@
+Rough thoughts/notes..
+
+We have (at least) 3 different display controller blocks at play:
+ + MDP3 - ?? seems to be what is on geeksphone peak device
+ + MDP4 - S3 (APQ8060, touchpad), S4-pro (APQ8064, nexus4 & ifc6410)
+ + MDSS - snapdragon 800
+
+(I don't have a completely clear picture on which display controller
+is in which devices)
+
+But, HDMI/DSI/etc blocks seem like they can be shared.  And I for sure
+don't want to have to deal with N different kms devices from
+xf86-video-freedreno.  Plus, it seems like we can do some clever tricks
+like have kms/crtc code build up gpu cmdstream to update scanout after
+rendering without involving the cpu.
+
+And on gpu side of things:
+ + zero, one, or two 2d cores (z180)
+ + and either a2xx or a3xx 3d core.
+
+So, one drm driver, with some modularity.  Different 'struct msm_kms'
+implementations, depending on display controller.  And one or more
+'struct msm_gpu' for the various different gpu sub-modules.
+
+The kms module provides the plane, crtc, and encoder objects, and
+loads whatever connectors are appropriate.
+
+For MDP4, the mapping is (I think):
+
+  plane   -> PIPE{RGBn,VGn}              \
+  crtc    -> OVLP{n} + DMA{P,S,E} (??)   |-> MDP "device"
+  encoder -> DTV/LCDC/DSI (within MDP4)  /
+  connector -> HDMI/DSI/etc              --> other device(s)
+
+Since the irq's that drm core mostly cares about are vblank/framedone,
+we'll let msm_mdp4_kms provide the irq install/uninstall/etc functions
+and treat the MDP4 block's irq as "the" irq.  Even though the connectors
+may have their own irqs which they install themselves.  For this reason
+the display controller is the "master" device.
+
+Each connector probably ends up being a seperate device, just for the
+logistics of finding/mapping io region, irq, etc.
+
